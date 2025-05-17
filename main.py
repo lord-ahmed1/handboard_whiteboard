@@ -33,23 +33,44 @@ def mouseCallback(event, x, y, flags, param):
           
         
 
-def sort_corners(corners):
+def sort_corners(corners,img):
+    h,w=img.shape[:2]
     """
     corners: numpy array of shape (4, 2)
     returns: sorted corners in order:
              top-left, top-right, bottom-left, bottom-right
     """
-    # Ensure float
-    corners = np.array(corners, dtype="float32")
+    # # Ensure float
+    # corners = np.array(corners, dtype="float32")
 
-    # Sum and diff of points
-    s = corners.sum(axis=1)         # x + y
-    diff = np.diff(corners, axis=1) # y - x
+    # # Sum and diff of points
+    # s = corners.sum(axis=1)         # x + y
+    # diff = np.diff(corners, axis=1) # y - x
 
-    top_left     = corners[np.argmin(s)]
-    bottom_right = corners[np.argmax(s)]
-    top_right    = corners[np.argmin(diff)]
-    bottom_left  = corners[np.argmax(diff)]
+    # top_left     = corners[np.argmin(s)]
+    # bottom_right = corners[np.argmax(s)]
+    # top_right    = corners[np.argmin(diff)]
+    # bottom_left  = corners[np.argmax(diff)]
+    distances_from_top_left=np.sum(corners**2,axis=1)
+    distances_from_top_right=np.sum((corners-[w,0])**2,axis=1)
+    distances_from_bottom_left=np.sum((corners-[0,h])**2,axis=1)
+    distances_from_bottom_right=np.sum((corners-[w,h])**2,axis=1)
+
+
+
+
+
+
+    top_left_index     = np.where(distances_from_top_left==np.min(distances_from_top_left))
+    bottom_right_index =np.where(distances_from_bottom_right==np.min(distances_from_bottom_right))
+    top_right_index    = np.where(distances_from_top_right==np.min(distances_from_top_right))
+    bottom_left_index  =np.where(distances_from_bottom_left==np.min(distances_from_bottom_left))
+
+    top_left,top_right,bottom_left,bottom_right=corners[top_left_index][0],corners[top_right_index][0],corners[bottom_left_index][0],corners[bottom_right_index][0]
+    print("dist",distances_from_top_left,"min",np.min(distances_from_top_left),"in",np.where(distances_from_top_left==np.min(distances_from_top_left)))
+    print(top_left,"top left")
+    print("corner",[top_left, top_right, bottom_left, bottom_right])
+
 
     return np.array([top_left, top_right, bottom_left, bottom_right],dtype=np.uint16)
 
@@ -70,7 +91,7 @@ def filter(img):
     blurred = cv.GaussianBlur(img, (11, 11), 0)
 
 
-    # Enhance details from the second image
+    # Enhance details 
     img = cv.addWeighted(img, 1.5, blurred, -1, 0)
 
     img=cv.resize(img,(w*2,h*2))
@@ -78,19 +99,18 @@ def filter(img):
 
    
 
-    # Apply sharpening filter
     canny=cv.Canny(img,130,140)
     canny = cv.filter2D(canny, -1, sharpen_kernel)
 
 
 
-    # canny=cv.resize(canny,(w*2,h*2))
 
 
-    # for index,corner in enumerate(corners):
-    #     cv.circle(img, tuple(corner), 4, (255, 255, 255), -1)
-    #     text=corner_name[index]
-    #     cv.putText(img, text, corner+15, cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+    for index,corner in enumerate(corners):
+        cv.circle(img, tuple(corner*2), 4, (255, 255, 255), -1)
+        text=corner_name[index]
+        cv.putText(img, text, corner*2+15, cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+    cv .imshow("enhanced",img)
     try:
         output_size = (int(img_corners[3][0]), int(img_corners[3][1]))  # Set output size based on img_corners
         canny=cv.warpPerspective(canny, matrix, output_size)
@@ -129,51 +149,40 @@ def add_new_data_field(image_path,corners):
 while br==0:
     ret, frame = cap.read()
     results = model(frame,conf=0.2)
-    # for result in results:
-    #     boxes = result.boxes.xyxy.cpu().numpy()  # Get bounding box coordinates
-    #     confidences = result.boxes.conf.cpu().numpy()  # Get confidence scores
-    #     try:
-    #         max_conf=np.max(confidences)
-    #         conf_index=np.where(confidences==max_conf)[0][0]
+  
 
-    #         box=boxes[conf_index]
-    #         x1, y1, x2, y2 = map(int, box)
-    #         corners=np.array([[x1,y1],[x2,y1],[x1,y2],[x2,y2]])*2
-    #         cv.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)  # Draw rectangle
-    #     except:
-    #         pass
+    for result in results:
+        if result.masks is not None:
+            masks = result.masks.data.cpu().numpy()
+            confs = result.boxes.conf.cpu().numpy()
 
 
-    result=results[0]
-    if result.masks is not None:
-        masks = result.masks.data.cpu().numpy()
-        confs = result.boxes.conf.cpu().numpy()
-        max_conf=np.max(confs)
-        conf_index=np.where(confs==max_conf)[0][0]
-        mask=masks[conf_index]
+            # Convert mask to binary
+            mask_uint8 = (masks[0] * 255).astype(np.uint8)
+            
+
+            # Find contours
+            contours, _ = cv.findContours(mask_uint8, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+            contours_sizes= [(cv.contourArea(cnt), cnt) for cnt in contours]
+            contour = max(contours_sizes, key=lambda x: x[0])[1]
+
+            for contourn in contours:
+                print("look",contour.shape)
+            
+
+                # Approximate contour to polygon
+                epsilon = 0.02 * cv.arcLength(contour, True)
+                print(epsilon)
+                approx = cv.approxPolyDP(contour, epsilon, True)
+                cv.drawContours(frame,[approx],0,(255,0,255),2)
 
 
-        # Convert mask to binary
-        mask_uint8 = (mask * 255).astype(np.uint8)
-        
-
-        # Find contours
-        contours, _ = cv.findContours(mask_uint8, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-
-        for contour in contours:
-            # Approximate contour to polygon
-            epsilon = 0.02 * cv.arcLength(contour, True)
-            approx = cv.approxPolyDP(contour, epsilon, True)
-
-            if len(approx) == 4:  # Likely a rectangle (like paper)
-                corners = approx.reshape(4, 2)
-                corners=sort_corners(corners)
-                print("📌 Paper corners:", corners)
+                corners = approx.reshape(-1, 2)
+                corners=sort_corners(corners,frame)
 
                 # Draw the corners on the image
                 for point in corners:
                     cv.circle(frame, tuple(point), 5, (0, 0, 255), -1)
-    cv.imshow("frame",frame)
 
 
 
@@ -188,7 +197,7 @@ while br==0:
         br=1
     if key==ord("s"):
         print("saving")
-        cv.imwrite(f'data/{imageN}.jpg',frame)
+        cv.imwrite(f'data/images/{imageN}.jpg',frame)
         add_new_data_field(f'data/{imageN}.jpg',corners)
         imageN+=1
 
