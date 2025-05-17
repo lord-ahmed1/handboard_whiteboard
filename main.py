@@ -4,7 +4,7 @@ import numpy as np
 from ultralytics import YOLO
 import json
 
-
+display_width,display_height=1920,1080
 model = YOLO("seg.pt")  # Replace "best.pt" with your trained YOLO model file
 model.overrides['verbose'] = False
 
@@ -35,6 +35,7 @@ def mouseCallback(event, x, y, flags, param):
 
 def sort_corners(corners,img):
     h,w=img.shape[:2]
+    
     """
     corners: numpy array of shape (4, 2)
     returns: sorted corners in order:
@@ -83,9 +84,11 @@ sharpen_kernel = np.array([[ 0, -1,  0],
 
 def filter(img):
     h,w=img.shape[:2]
+    scalex,scaley=int(display_width/w),int(display_height/h)
+    scale_array=np.array([scalex,scaley])
 
-    img_corners=np.float32([[0,0],[w,0],[0,h],[w,h]])*2
-    matrix,_=cv.findHomography(np.float32(corners)*2,img_corners)
+    img_corners=np.float32([[0,0],[w,0],[0,h],[w,h]])*scale_array
+    matrix,_=cv.findHomography(np.float32(corners)*scale_array,img_corners)
    
 
     blurred = cv.GaussianBlur(img, (11, 11), 0)
@@ -94,7 +97,7 @@ def filter(img):
     # Enhance details 
     img = cv.addWeighted(img, 1.5, blurred, -1, 0)
 
-    img=cv.resize(img,(w*2,h*2))
+    img=cv.resize(img,np.array([w,h])*scale_array)
 
 
    
@@ -107,9 +110,9 @@ def filter(img):
 
 
     for index,corner in enumerate(corners):
-        cv.circle(img, tuple(corner*2), 4, (255, 255, 255), -1)
+        cv.circle(img, tuple(corner*scale_array), 4, (255, 255, 255), -1)
         text=corner_name[index]
-        cv.putText(img, text, corner*2+15, cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv.putText(img, text, corner*scale_array+15, cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
     cv .imshow("enhanced",img)
     try:
         output_size = (int(img_corners[3][0]), int(img_corners[3][1]))  # Set output size based on img_corners
@@ -174,7 +177,7 @@ while br==0:
                 epsilon = 0.02 * cv.arcLength(contour, True)
                 print(epsilon)
                 approx = cv.approxPolyDP(contour, epsilon, True)
-                cv.drawContours(frame,[approx],0,(255,0,255),2)
+                # cv.drawContours(frame,[approx],0,(255,0,255),2)
 
 
                 corners = approx.reshape(-1, 2)
