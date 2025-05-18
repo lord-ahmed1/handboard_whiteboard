@@ -99,7 +99,7 @@ def filter(img):
     img_corners=np.float32([[0,0],[w,0],[0,h],[w,h]])*scale_array
     corners_array=np.float32([corners["top_left"],corners["top_right"],corners["bottom_left"],corners["bottom_right"]])
     matrix,_=cv.findHomography(corners_array*scale_array,img_corners)
-    canny=cv.Canny(cv.resize(img,(display_width,display_height)),130,140)
+    canny=cv.Canny(cv.resize(img,([w,h]*scale_array)),130,140)
     canny=cv.dilate(canny,(2,2),iterations=1)
     for index,corner in enumerate(corners):
         corner_value=corners[corner]
@@ -115,7 +115,7 @@ def filter(img):
     return canny
 
 url = "http://192.168.1.5:4747/video"
-url = 0
+url = 2
 
 cap = cv.VideoCapture(url)
 
