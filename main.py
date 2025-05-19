@@ -11,7 +11,7 @@ import os
 
 
 frame_queue = Queue(maxsize=1)
-display_width,display_height=1920,1080
+display_width,display_height=1080,1920
 
 
 def recorderThread(frame_queue):  #to achieve more accurate recording and not affected by code delays
@@ -28,25 +28,20 @@ def recorderThread(frame_queue):  #to achieve more accurate recording and not af
             saved_frame=frame
         else:
             frame=saved_frame
-        videoWriter.write(cv.cvtColor(frame.copy(),cv.COLOR_GRAY2BGR))
+        videoWriter.write(frame.copy())
         sleep(1/2)
     videoWriter.release()
 
 
 track_mouse=-1
 def mouseCallback(event, x, y, flags, param):
-    print("mouse callback")
     global corners
     global track_mouse
     pos = np.array([x, y])
-    print(pos,"pos")
     #when the mouse is clicked, check which corner is near cursor and assign it to track_mouse
     if event == cv.EVENT_LBUTTONDOWN:
-        print("mouse down")
         for corner in corners:
             corner_value=corners[corner]
-            print(corner,corner_value,"values")
-            print(pos,"pos")
 
             if np.sqrt(np.sum((pos-corner_value)**2))<20:
                 track_mouse=corner
@@ -93,31 +88,53 @@ def sort_corners(corners,img):
     return {"top_left":top_left,"top_right":top_right,"bottom_left":bottom_left,"bottom_right":bottom_right}
 
 def filter(img):
-    h,w=img.shape[:2]
+    cop=img.copy()
+    h,w=480,640
     scalex,scaley=int(display_width/w),int(display_height/h)
     scale_array=np.array([scalex,scaley])
-    img_corners=np.float32([[0,0],[w,0],[0,h],[w,h]])*scale_array
+    img_corners=np.float32([[0,0],[display_width,0],[0,display_height],[display_width,display_height]])
     corners_array=np.float32([corners["top_left"],corners["top_right"],corners["bottom_left"],corners["bottom_right"]])
-    matrix,_=cv.findHomography(corners_array*scale_array,img_corners)
-    canny=cv.Canny(cv.resize(img,([w,h]*scale_array)),130,140)
-    canny=cv.dilate(canny,(2,2),iterations=1)
-    for index,corner in enumerate(corners):
-        corner_value=corners[corner]
-        cv.circle(img, tuple(corner_value), 4, (255, 255, 255), -1)
-        
-        cv.putText(img, corner, corner_value+15, cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-    cv .imshow("enhanced",img)
+    matrix,_=cv.findHomography(corners_array,img_corners)
     try:
-        canny=cv.warpPerspective(canny, matrix, (display_width,display_height))
+        img=cv.warpPerspective(img, matrix, (display_width,display_height))
     except:
         pass
+   
+
+    img = cv.GaussianBlur(img, (5, 5), 1.5)
+    
+    canny=cv.Canny(img,7,100)
+    kernel = np.array([[0, -1, 0],
+                       [-1, 5, -1],
+                       [0, -1, 0]])
+    canny = cv.filter2D(canny, -1, kernel)
+    canny=cv.dilate(canny,(2,2),iterations=3)
+    # canny=cv.erode(canny,(3,3),iterations=5)
+    for index,corner in enumerate(corners):
+        corner_value=corners[corner]
+        cv.circle(cop, tuple(corner_value), 4, (255, 255, 255), -1)
+        
+        cv.putText(cop, corner, corner_value+15, cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+    cv .imshow("enhanced",cop)
+    color=np.zeros((display_height,display_width,3),dtype=np.uint8)
+    color[:,:]=[136,186,241]
+    try:
+        canny=cv.bitwise_and(color,color,mask=canny)
+    except:
+        print("error")
+        canny=cv.cvtColor(canny,cv.COLOR_GRAY2BGR)
+    # canny=cv.rotate(canny,cv.ROTATE_180)
     
     return canny
 
 url = "http://192.168.1.5:4747/video"
-url = 2
+url = 3
 
 cap = cv.VideoCapture(url)
+# Get and print the camera resolution
+width = cap.get(cv.CAP_PROP_FRAME_WIDTH)
+height = cap.get(cv.CAP_PROP_FRAME_HEIGHT)
+print(f"Camera resolution: {int(width)}x{int(height)}")
 
 if not cap.isOpened():
     print("Failed to connect to DroidCam stream.")
@@ -160,7 +177,9 @@ cv.setMouseCallback("enhanced", mouseCallback)
 
 while br==0:
     ret, frame = cap.read()
-    results = model(frame,conf=0.5)
+    
+    backed_frame=frame.copy()
+    results = model(cv.resize(frame.copy(), (640, 480)),conf=0.4)
   
 
     for result in results:
@@ -186,9 +205,14 @@ while br==0:
                 approx = cv.approxPolyDP(contour, epsilon, True)
                 # cv.drawContours(frame,[approx],0,(255,0,255),2)
 
-
-                obtained_corners = approx.reshape(-1, 2)
-                corners=sort_corners(obtained_corners,frame)
+                # Scale the detected corners from 640x480 to the actual frame size
+                scale_x = width / 640
+                scale_y = height / 480
+                obtained_corners = (approx.reshape(-1, 2) * [scale_x, scale_y]).astype(int)
+                try:
+                    corners=sort_corners(obtained_corners,frame)
+                except:
+                    pass
 
                 # Draw the corners on the image
                 for point in corners:
@@ -197,14 +221,14 @@ while br==0:
 
     if ret:
         show=filter(frame)
-        cv.imshow("DroidCam Stream", show)
+        cv.imshow("DroidCam Stream",cv.resize(show,(int(show.shape[1]/2),int(show.shape[0]/2)) ) )
     key=cv.waitKey(1)
     if key==ord("q"):
         record_mode=0
         br=1
     if key==ord("d"):
         print("saving")
-        cv.imwrite(f'data/images/{imageN}.jpg',frame)
+        cv.imwrite(f'data/images/{imageN}.jpg',backed_frame)
         add_new_data_field(f'data/{imageN}.jpg',corners)
         imageN+=1
     if key==ord("s"):
